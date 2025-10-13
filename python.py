@@ -453,4 +453,233 @@ Ngưỡng tham chiếu:
         resp = model.generate_content(prompt)
         return resp.text or "(Không có nội dung từ Gemini)"
     except Exception as e:
-        return f"
+        return f"Lỗi khi gọi Gemini: {e}"
+
+
+def make_zip_for_download() -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for fname in ["python.py", "requirements.txt", "README.md"]:
+            if os.path.exists(fname):
+                z.write(fname, arcname=fname)
+    buf.seek(0)
+    return buf.read()
+
+
+# ========================== UI ==========================
+st.title("💼 Thẩm định phương án sử dụng vốn (PASDV)")
+st.caption("Upload .docx → Trích xuất → Chỉnh sửa → Tính chỉ tiêu → Kế hoạch trả nợ → Phân tích AI → Xuất Excel/ZIP")
+
+with st.sidebar:
+    st.header("⚙️ Cấu hình & Gemini")
+    model_name = st.selectbox("Model Gemini", ["gemini-2.0-flash-exp", "gemini-1.5-pro", "gemini-1.5-flash"], index=0)
+    api_key = st.text_input("API Key Gemini", type="password", help="Hoặc set GENAI_API_KEY trong secrets.")
+    if not api_key:
+        api_key = st.secrets.get("GENAI_API_KEY", "") if hasattr(st, "secrets") else ""
+
+    st.markdown("---")
+    st.write("📦 Xuất ZIP mã nguồn để đưa lên GitHub/Streamlit Cloud ở cuối trang.")
+
+uploaded = st.file_uploader("Tải lên hồ sơ phương án pasdv.docx", type=["docx"], help="Chỉ cần một file .docx")
+data = FIELD_DEFAULTS.copy()
+
+if uploaded is not None:
+    try:
+        data.update(extract_from_docx(uploaded.read()))
+        st.success("✅ Đã trích xuất sơ bộ từ file.")
+    except Exception as e:
+        st.warning(f"⚠️ Không đọc được file DOCX: {e}")
+
+st.markdown("""
+<style>
+.info-box {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    padding: 20px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+.info-box h3 {
+    color: white;
+    margin: 0;
+}
+</style>
+<div class="info-box">
+    <h3>📋 1) Thông tin khách hàng & khoản vay</h3>
+</div>
+""", unsafe_allow_html=True)
+
+col1, col2, col3 = st.columns(3)
+with col1:
+    data["ten_khach_hang"] = st.text_input("Họ tên KH", value=data["ten_khach_hang"])
+    data["cccd"] = st.text_input("CCCD/CMND", value=data["cccd"])
+    data["noi_cu_tru"] = st.text_input("Nơi cư trú", value=data["noi_cu_tru"])
+    data["so_dien_thoai"] = st.text_input("Số điện thoại", value=data["so_dien_thoai"])
+
+with col2:
+    data["muc_dich_vay"] = st.text_input("Mục đích vay", value=data["muc_dich_vay"])
+    data["tong_nhu_cau_von"] = vn_money_input("Tổng nhu cầu vốn (VND)", data["tong_nhu_cau_von"])
+    data["von_doi_ung"] = vn_money_input("Vốn đối ứng (VND)", data["von_doi_ung"])
+    data["so_tien_vay"] = vn_money_input("Số tiền vay (VND)", data["so_tien_vay"])
+
+with col3:
+    data["lai_suat_nam"] = vn_percent_input("Lãi suất (%/năm)", data["lai_suat_nam"])
+    data["thoi_gian_vay_thang"] = st.number_input("Thời gian vay (tháng)", value=int(data["thoi_gian_vay_thang"]), min_value=1, max_value=480, step=1)
+    data["thu_nhap_thang"] = vn_money_input("Thu nhập tháng (VND)", data["thu_nhap_thang"])
+    data["gia_tri_tsdb"] = vn_money_input("Giá trị TSĐB (VND)", data["gia_tri_tsdb"])
+
+col4, col5 = st.columns(2)
+with col4:
+    data["tong_no_hien_tai"] = vn_money_input("Tổng nợ hiện tại (VND)", data["tong_no_hien_tai"])
+with col5:
+    data["tong_von_dau_tu"] = vn_money_input("Tổng vốn đầu tư (VND)", data["tong_von_dau_tu"])
+    data["loi_nhuan_rong_nam"] = vn_money_input("Lợi nhuận ròng năm (VND)", data["loi_nhuan_rong_nam"])
+
+st.markdown("---")
+st.subheader("2) Chỉ tiêu tài chính (CADAP)")
+metrics = compute_metrics(data)
+
+if go is not None:
+    create_metrics_chart(metrics)
+else:
+    st.warning("⚠️ Không thể vẽ biểu đồ. Vui lòng cài đặt thư viện Plotly.")
+
+mcol1, mcol2, mcol3, mcol4 = st.columns(4)
+with mcol1:
+    st.metric("PMT (VND/tháng)", f"{format_vnd(metrics['PMT_thang'])}")
+    st.metric("DSR (≤80%)", f"{metrics['DSR']*100:,.1f}%" if not np.isnan(metrics["DSR"]) else "n/a")
+with mcol2:
+    st.metric("LTV (≤80%)", f"{metrics['LTV']*100:,.1f}%" if not np.isnan(metrics["LTV"]) else "n/a")
+    st.metric("E/C (≥20%)", f"{metrics['E_over_C']*100:,.1f}%" if not np.isnan(metrics["E_over_C"]) else "n/a")
+with mcol3:
+    st.metric("Debt/Income (<4)", f"{metrics['Debt_over_Income']:,.2f}" if not np.isnan(metrics["Debt_over_Income"]) else "n/a")
+    st.metric("CFR (>0)", f"{metrics['CFR']*100:,.1f}%" if not np.isnan(metrics["CFR"]) else "n/a")
+with mcol4:
+    st.metric("Coverage (>120%)", f"{metrics['Coverage']*100:,.1f}%" if not np.isnan(metrics["Coverage"]) else "n/a")
+    st.metric("Score demo", f"{metrics['Score_AI_demo']:,.3f}")
+
+ok_flag = "✅" if metrics["Phuong_an_hop_ly"] else "⚠️"
+st.info(f"{ok_flag} Tổng nhu cầu vốn {'=' if metrics['Phuong_an_hop_ly'] else '≠'} vốn đối ứng + số tiền vay")
+
+st.markdown("---")
+st.markdown("""
+<div class="info-box">
+    <h3>💰 3) Kế hoạch trả nợ</h3>
+</div>
+""", unsafe_allow_html=True)
+
+schedule_df = build_amortization(
+    principal=data["so_tien_vay"],
+    annual_rate_pct=data["lai_suat_nam"],
+    months=int(data["thoi_gian_vay_thang"]),
+    start_date=dt.date.today()
+)
+
+styled_table = style_schedule_table(schedule_df)
+st.dataframe(styled_table, use_container_width=True, height=400)
+
+out = io.BytesIO()
+with pd.ExcelWriter(out, engine="openpyxl") as writer:
+    df_data = pd.DataFrame([data])
+    for col in ['tong_nhu_cau_von', 'von_doi_ung', 'so_tien_vay', 'thu_nhap_thang',
+                'gia_tri_tsdb', 'tong_no_hien_tai', 'loi_nhuan_rong_nam', 'tong_von_dau_tu']:
+        if col in df_data.columns:
+            df_data[col] = df_data[col].apply(lambda x: format_vnd(x) if x is not None else None)
+
+    df_metrics = pd.DataFrame([metrics])
+    for col in ['PMT_thang']:
+        if col in df_metrics.columns:
+            df_metrics[col] = df_metrics[col].apply(lambda x: format_vnd(x) if x is not None else None)
+
+    for col in ['DSR', 'LTV', 'E_over_C', 'CFR', 'Coverage', 'ROI']:
+        if col in df_metrics.columns:
+            df_metrics[col] = df_metrics[col].apply(lambda x: f"{x*100:,.2f}%" if not np.isnan(x) else 'n/a')
+
+    df_data.to_excel(writer, sheet_name="Thong_tin", index=False)
+    df_metrics.to_excel(writer, sheet_name="Chi_tieu", index=False)
+    schedule_df.to_excel(writer, sheet_name="Ke_hoach", index=False)
+out.seek(0)
+st.download_button("⬇️ Tải Excel", data=out, file_name="ke_hoach_tra_no.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+st.subheader("4) Phân tích AI (Gemini)")
+if api_key and genai is not None:
+    with st.spinner("Đang phân tích..."):
+        analysis = gemini_analyze(data, metrics, model_name=model_name, api_key=api_key)
+    st.markdown("**Kết luận:**")
+    st.write(analysis)
+else:
+    st.warning("Chưa có API key Gemini. Điền API key ở Sidebar để dùng tính năng này.")
+
+st.subheader("5) 💬 Trò chuyện với AI về hồ sơ")
+
+if "chat_messages" not in st.session_state:
+    st.session_state.chat_messages = []
+
+for msg in st.session_state.chat_messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
+
+if prompt := st.chat_input("Hỏi AI về hồ sơ này... (VD: Đánh giá khả năng trả nợ? Rủi ro nào cần lưu ý?)"):
+    st.session_state.chat_messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    with st.chat_message("assistant"):
+        if not api_key:
+            response = "⚠️ Vui lòng nhập API Key Gemini ở Sidebar để sử dụng chatbox."
+            st.warning(response)
+        elif genai is None:
+            response = "⚠️ Thư viện google-generativeai chưa được cài đặt."
+            st.error(response)
+        else:
+            try:
+                with st.spinner("🤔 AI đang suy nghĩ..."):
+                    genai.configure(api_key=api_key)
+                    model = genai.GenerativeModel(model_name)
+
+                    context = f"""
+Bạn là chuyên viên tín dụng chuyên nghiệp. Dưới đây là thông tin hồ sơ vay:
+
+**Thông tin khách hàng:**
+- Họ tên: {data['ten_khach_hang']}
+- CCCD: {data['cccd']}
+- Địa chỉ: {data['noi_cu_tru']}
+- SĐT: {data['so_dien_thoai']}
+
+**Phương án vay:**
+- Mục đích: {data['muc_dich_vay']}
+- Tổng nhu cầu vốn: {format_vnd(data['tong_nhu_cau_von'])} VND
+- Vốn đối ứng: {format_vnd(data['von_doi_ung'])} VND
+- Số tiền vay: {format_vnd(data['so_tien_vay'])} VND
+- Lãi suất: {data['lai_suat_nam']}%/năm
+- Thời hạn: {data['thoi_gian_vay_thang']} tháng
+- Thu nhập tháng: {format_vnd(data['thu_nhap_thang'])} VND
+- Giá trị TSĐB: {format_vnd(data['gia_tri_tsdb'])} VND
+
+**Chỉ tiêu tài chính:**
+- PMT (tiền trả hàng tháng): {format_vnd(metrics['PMT_thang'])} VND
+- DSR: {metrics['DSR']*100:.1f}% (chuẩn ≤80%)
+- LTV: {metrics['LTV']*100:.1f}% (chuẩn ≤80%)
+- E/C: {metrics['E_over_C']*100:.1f}% (chuẩn ≥20%)
+- CFR: {metrics['CFR']*100:.1f}% (chuẩn >0%)
+- Coverage: {metrics['Coverage']*100:.1f}% (chuẩn >120%)
+- Score tổng hợp: {metrics['Score_AI_demo']:.3f}
+
+Hãy trả lời câu hỏi sau dựa trên thông tin trên, sử dụng tiếng Việt chuyên nghiệp nhưng dễ hiểu:
+"""
+                    full_prompt = context + "\n\nCâu hỏi: " + prompt
+                    resp = model.generate_content(full_prompt)
+                    response = resp.text if resp.text else "⚠️ Không nhận được phản hồi từ AI."
+                    st.markdown(response)
+
+            except Exception as e:
+                response = f"❌ Lỗi khi gọi Gemini: {str(e)}"
+                st.error(response)
+
+        st.session_state.chat_messages.append({"role": "assistant", "content": response})
+
+col_clear, col_export = st.columns([1, 3])
+with col_clear:
+    if st.button("🗑️ Xóa chat"):
+        st.session_state.chat_messages = []
+        st.rerun()
