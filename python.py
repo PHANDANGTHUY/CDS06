@@ -62,7 +62,7 @@ def vnd_to_float(s: str) -> float:
     """Chuyển đổi chuỗi tiền tệ VND (dấu chấm là phân cách hàng nghìn) sang số float"""
     if s is None:
         return 0.0
-    # Xóa dấu phân cách hàng nghìn (dấu chấm) và các ký tự không phải số/dấu trừ
+    # Xóa dấu phân cách hàng nghìn (.) và các ký tự không phải số/dấu trừ
     s = str(s).replace(".", "").replace(",", "").replace(" ", "")
     s = s.replace("đ", "").replace("VND", "").replace("vnđ", "").replace("₫", "")
     s = re.sub(r"[^\d\-]", "", s)
@@ -71,22 +71,19 @@ def vnd_to_float(s: str) -> float:
     except Exception:
         return 0.0
 
-# START: YÊU CẦU 2 - ĐỊNH DẠNG SỐ QUỐC TẾ
-def format_currency_intl(amount: float) -> str:
-    """Định dạng số tiền theo tiêu chuẩn quốc tế (ví dụ: 1,234,567.00)"""
-    # Sử dụng f"{amount:,.0f}" sẽ mặc định dùng dấu phẩy cho hàng nghìn (tiêu chuẩn quốc tế)
-    return f"{amount:,.0f}"
+# === ĐỊNH DẠNG SỐ KIỂU VIỆT NAM (hàng nghìn = '.', thập phân = ',') ===
+def format_vnd(amount: float) -> str:
+    """Định dạng tiền VND: 1.234.567"""
+    return f"{amount:,.0f}".replace(",", ".")
 
-def format_currency_intl_float(amount: float) -> str:
-    """Định dạng số thập phân theo tiêu chuẩn quốc tế (ví dụ: 1,234,567.89)"""
-    return f"{amount:,.2f}"
-
-# Cập nhật hàm format_vnd cũ thành format_currency_intl cho code mới
-# def format_vnd(amount: float) -> str:
-#     """Định dạng số tiền VND với dấu chấm ngăn cách hàng nghìn"""
-#     return f"{amount:,.0f}".replace(",", ".") # Logic cũ
-
-# END: YÊU CẦU 2 - ĐỊNH DẠNG SỐ QUỐC TẾ
+def format_vnd_float(amount: float) -> str:
+    """Định dạng số thập phân kiểu VN: 1.234.567,89"""
+    s = f"{amount:,.2f}"          # 1,234,567.89
+    s = s.replace(",", "_")       # 1_234_567.89
+    s = s.replace(".", ",")       # 1_234_567,89
+    s = s.replace("_", ".")       # 1.234.567,89
+    return s
+# === HẾT PHẦN ĐỊNH DẠNG ===
 
 def percent_to_float(s: str) -> float:
     """Chuyển đổi chuỗi phần trăm sang số float"""
@@ -266,12 +263,12 @@ def style_schedule_table(df: pd.DataFrame) -> pd.DataFrame:
             return ['background-color: #ffffff'] * len(row)
     
     styled = df.style.apply(color_row, axis=1)
-    # Cập nhật định dạng số tiền sử dụng format_currency_intl
+    # Định dạng số tiền theo kiểu VN
     styled = styled.format({
-        'Tiền lãi': lambda x: format_currency_intl(x),
-        'Tiền gốc': lambda x: format_currency_intl(x),
-        'Tổng phải trả': lambda x: format_currency_intl(x),
-        'Dư nợ còn lại': lambda x: format_currency_intl(x)
+        'Tiền lãi': lambda x: format_vnd(x),
+        'Tiền gốc': lambda x: format_vnd(x),
+        'Tổng phải trả': lambda x: format_vnd(x),
+        'Dư nợ còn lại': lambda x: format_vnd(x)
     })
     styled = styled.set_properties(**{
         'text-align': 'right',
@@ -346,7 +343,6 @@ def create_metrics_chart(metrics: Dict[str, Any]):
         st.info("Không có đủ dữ liệu để vẽ biểu đồ chỉ tiêu tài chính.")
         return
 
-    # Xác định màu sắc và biểu tượng
     def get_color(row):
         metric = row['Chỉ tiêu']
         value = row['Giá trị']
@@ -360,7 +356,6 @@ def create_metrics_chart(metrics: Dict[str, Any]):
     df_metrics['Màu'] = df_metrics.apply(get_color, axis=1)
     df_metrics['Giá trị (%)'] = df_metrics['Giá trị'] * 100
 
-    # Vẽ biểu đồ Bar
     fig = px.bar(
         df_metrics,
         x="Chỉ tiêu",
@@ -372,14 +367,12 @@ def create_metrics_chart(metrics: Dict[str, Any]):
         labels={"Giá trị (%)": "Giá trị (%)", "Chỉ tiêu": "Chỉ tiêu"},
     )
 
-    # Thêm đường tham chiếu (Reference Line)
     for index, row in df_metrics.iterrows():
         metric = row['Chỉ tiêu']
         ref_value = row['Ngưỡng tham chiếu'] * 100
-        color = "#ffc107" if ref_value > 0 else "#007bff" # Màu vàng cho giới hạn trên, xanh dương cho giới hạn dưới/khác
+        color = "#ffc107" if ref_value > 0 else "#007bff"
 
         if metric in ["DSR", "LTV"]:
-             # Thêm đường giới hạn trên (Maximum)
             fig.add_shape(
                 type="line",
                 x0=index - 0.4, x1=index + 0.4, y0=ref_value, y1=ref_value,
@@ -393,7 +386,6 @@ def create_metrics_chart(metrics: Dict[str, Any]):
                 font=dict(color=color, size=10),
             )
         elif metric in ["E/C", "Coverage"]:
-            # Thêm đường giới hạn dưới (Minimum)
             fig.add_shape(
                 type="line",
                 x0=index - 0.4, x1=index + 0.4, y0=ref_value, y1=ref_value,
@@ -426,9 +418,15 @@ def gemini_analyze(d: Dict[str, Any], metrics: Dict[str, Any], model_name: str, 
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel(model_name)
         
-        # Cập nhật định dạng số tiền trong prompt
-        d_formatted = {k: format_currency_intl(v) if isinstance(v, (int, float)) and k != 'lai_suat_nam' else v for k, v in d.items()}
-        metrics_formatted = {k: f"{v*100:,.1f}%" if k not in ["PMT_thang", "Debt_over_Income", "Score_AI_demo"] and not np.isnan(v) else format_currency_intl(v) if k == "PMT_thang" else f"{v:,.2f}" for k, v in metrics.items()}
+        # Định dạng số tiền kiểu VN trong prompt
+        d_formatted = {k: format_vnd(v) if isinstance(v, (int, float)) and k != 'lai_suat_nam' else v for k, v in d.items()}
+        metrics_formatted = {
+            k: (f"{v*100:,.1f}%"
+                if k not in ["PMT_thang", "Debt_over_Income", "Score_AI_demo"] and not np.isnan(v)
+                else format_vnd(v) if k == "PMT_thang"
+                else f"{v:,.2f}")
+            for k, v in metrics.items()
+        }
         
         prompt = f"""
 Bạn là chuyên viên tín dụng. Phân tích hồ sơ vay sau (JSON) và đưa ra đề xuất "Cho vay" / "Cho vay có điều kiện" / "Không cho vay" kèm giải thích ngắn gọn (<=200 từ).
@@ -501,7 +499,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Sửa định dạng hiển thị cho các number_input thành định dạng số quốc tế
+# number_input vẫn để format kỹ thuật số để nhập dễ, hiển thị ra dùng format_vnd
 col1, col2, col3 = st.columns(3)
 with col1:
     data["ten_khach_hang"] = st.text_input("Họ tên KH", value=data["ten_khach_hang"])
@@ -510,21 +508,21 @@ with col1:
     data["so_dien_thoai"] = st.text_input("Số điện thoại", value=data["so_dien_thoai"])
 with col2:
     data["muc_dich_vay"] = st.text_input("Mục đích vay", value=data["muc_dich_vay"])
-    data["tong_nhu_cau_von"] = st.number_input("Tổng nhu cầu vốn (VND)", value=float(data["tong_nhu_cau_von"]), min_value=0.0, step=1_000_000.0, format="%f") # Sửa format
-    data["von_doi_ung"] = st.number_input("Vốn đối ứng (VND)", value=float(data["von_doi_ung"]), min_value=0.0, step=1_000_000.0, format="%f") # Sửa format
-    data["so_tien_vay"] = st.number_input("Số tiền vay (VND)", value=float(data["so_tien_vay"]), min_value=0.0, step=1_000_000.0, format="%f") # Sửa format
+    data["tong_nhu_cau_von"] = st.number_input("Tổng nhu cầu vốn (VND)", value=float(data["tong_nhu_cau_von"]), min_value=0.0, step=1_000_000.0, format="%f")
+    data["von_doi_ung"] = st.number_input("Vốn đối ứng (VND)", value=float(data["von_doi_ung"]), min_value=0.0, step=1_000_000.0, format="%f")
+    data["so_tien_vay"] = st.number_input("Số tiền vay (VND)", value=float(data["so_tien_vay"]), min_value=0.0, step=1_000_000.0, format="%f")
 with col3:
     data["lai_suat_nam"] = st.number_input("Lãi suất (%/năm)", value=float(data["lai_suat_nam"]), min_value=0.0, max_value=100.0, step=0.1, format="%.2f")
     data["thoi_gian_vay_thang"] = st.number_input("Thời gian vay (tháng)", value=int(data["thoi_gian_vay_thang"]), min_value=1, max_value=480, step=1)
-    data["thu_nhap_thang"] = st.number_input("Thu nhập tháng (VND)", value=float(data["thu_nhap_thang"]), min_value=0.0, step=1_000_000.0, format="%f") # Sửa format
-    data["gia_tri_tsdb"] = st.number_input("Giá trị TSĐB (VND)", value=float(data["gia_tri_tsdb"]), min_value=0.0, step=1_000_000.0, format="%f") # Sửa format
+    data["thu_nhap_thang"] = st.number_input("Thu nhập tháng (VND)", value=float(data["thu_nhap_thang"]), min_value=0.0, step=1_000_000.0, format="%f")
+    data["gia_tri_tsdb"] = st.number_input("Giá trị TSĐB (VND)", value=float(data["gia_tri_tsdb"]), min_value=0.0, step=1_000_000.0, format="%f")
 
 col4, col5 = st.columns(2)
 with col4:
-    data["tong_no_hien_tai"] = st.number_input("Tổng nợ hiện tại (VND)", value=float(data["tong_no_hien_tai"]), min_value=0.0, step=1_000_000.0, format="%f") # Sửa format
+    data["tong_no_hien_tai"] = st.number_input("Tổng nợ hiện tại (VND)", value=float(data["tong_no_hien_tai"]), min_value=0.0, step=1_000_000.0, format="%f")
 with col5:
-    data["tong_von_dau_tu"] = st.number_input("Tổng vốn đầu tư (VND)", value=float(data["tong_von_dau_tu"]), min_value=0.0, step=1_000_000.0, format="%f") # Sửa format
-    data["loi_nhuan_rong_nam"] = st.number_input("Lợi nhuận ròng năm (VND)", value=float(data["loi_nhuan_rong_nam"]), min_value=0.0, step=1_000_000.0, format="%f") # Sửa format
+    data["tong_von_dau_tu"] = st.number_input("Tổng vốn đầu tư (VND)", value=float(data["tong_von_dau_tu"]), min_value=0.0, step=1_000_000.0, format="%f")
+    data["loi_nhuan_rong_nam"] = st.number_input("Lợi nhuận ròng năm (VND)", value=float(data["loi_nhuan_rong_nam"]), min_value=0.0, step=1_000_000.0, format="%f")
 
 # Metrics
 st.markdown("---")
@@ -539,8 +537,7 @@ else:
 
 mcol1, mcol2, mcol3, mcol4 = st.columns(4)
 with mcol1:
-    # Sửa định dạng metric PMT
-    st.metric("PMT (VND/tháng)", f"{format_currency_intl(metrics['PMT_thang'])}") 
+    st.metric("PMT (VND/tháng)", f"{format_vnd(metrics['PMT_thang'])}") 
     st.metric("DSR (≤80%)", f"{metrics['DSR']*100:,.1f}%" if not np.isnan(metrics["DSR"]) else "n/a")
 with mcol2:
     st.metric("LTV (≤80%)", f"{metrics['LTV']*100:,.1f}%" if not np.isnan(metrics["LTV"]) else "n/a")
@@ -576,27 +573,25 @@ st.dataframe(styled_table, use_container_width=True, height=400)
 
 out = io.BytesIO()
 with pd.ExcelWriter(out, engine="openpyxl") as writer:
-    # Định dạng các cột tiền tệ trong Excel trước khi lưu (sử dụng format quốc tế)
+    # Đưa sang chuỗi định dạng kiểu VN trước khi lưu (như yêu cầu)
     df_data = pd.DataFrame([data])
     for col in ['tong_nhu_cau_von', 'von_doi_ung', 'so_tien_vay', 'thu_nhap_thang', 
                 'gia_tri_tsdb', 'tong_no_hien_tai', 'loi_nhuan_rong_nam', 'tong_von_dau_tu']:
         if col in df_data.columns:
-            df_data[col] = df_data[col].apply(lambda x: format_currency_intl(x) if x is not None else None)
+            df_data[col] = df_data[col].apply(lambda x: format_vnd(x) if x is not None else None)
 
     df_metrics = pd.DataFrame([metrics])
     for col in ['PMT_thang']:
         if col in df_metrics.columns:
-            df_metrics[col] = df_metrics[col].apply(lambda x: format_currency_intl(x) if x is not None else None)
+            df_metrics[col] = df_metrics[col].apply(lambda x: format_vnd(x) if x is not None else None)
     
     # Định dạng các chỉ số tỷ lệ
     for col in ['DSR', 'LTV', 'E_over_C', 'CFR', 'Coverage', 'ROI']:
          if col in df_metrics.columns:
             df_metrics[col] = df_metrics[col].apply(lambda x: f"{x*100:,.2f}%" if not np.isnan(x) else 'n/a')
 
-
     df_data.to_excel(writer, sheet_name="Thong_tin", index=False)
     df_metrics.to_excel(writer, sheet_name="Chi_tieu", index=False)
-    # Bảng kế hoạch trả nợ đã được làm tròn và sử dụng số float trong df, sẽ sử dụng định dạng Excel mặc định
     schedule_df.to_excel(writer, sheet_name="Ke_hoach", index=False)
 out.seek(0)
 st.download_button("⬇️ Tải Excel", data=out, file_name="ke_hoach_tra_no.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -644,7 +639,7 @@ if prompt := st.chat_input("Hỏi AI về hồ sơ này... (VD: Đánh giá kh�
                     genai.configure(api_key=api_key)
                     model = genai.GenerativeModel(model_name)
                     
-                    # Tạo context từ dữ liệu hồ sơ (sử dụng định dạng quốc tế)
+                    # Tạo context từ dữ liệu hồ sơ (hiển thị kiểu VN)
                     context = f"""
 Bạn là chuyên viên tín dụng chuyên nghiệp. Dưới đây là thông tin hồ sơ vay:
 
@@ -656,16 +651,16 @@ Bạn là chuyên viên tín dụng chuyên nghiệp. Dưới đây là thông t
 
 **Phương án vay:**
 - Mục đích: {data['muc_dich_vay']}
-- Tổng nhu cầu vốn: {format_currency_intl(data['tong_nhu_cau_von'])} VND
-- Vốn đối ứng: {format_currency_intl(data['von_doi_ung'])} VND
-- Số tiền vay: {format_currency_intl(data['so_tien_vay'])} VND
+- Tổng nhu cầu vốn: {format_vnd(data['tong_nhu_cau_von'])} VND
+- Vốn đối ứng: {format_vnd(data['von_doi_ung'])} VND
+- Số tiền vay: {format_vnd(data['so_tien_vay'])} VND
 - Lãi suất: {data['lai_suat_nam']}%/năm
 - Thời hạn: {data['thoi_gian_vay_thang']} tháng
-- Thu nhập tháng: {format_currency_intl(data['thu_nhap_thang'])} VND
-- Giá trị TSĐB: {format_currency_intl(data['gia_tri_tsdb'])} VND
+- Thu nhập tháng: {format_vnd(data['thu_nhap_thang'])} VND
+- Giá trị TSĐB: {format_vnd(data['gia_tri_tsdb'])} VND
 
 **Chỉ tiêu tài chính:**
-- PMT (tiền trả hàng tháng): {format_currency_intl(metrics['PMT_thang'])} VND
+- PMT (tiền trả hàng tháng): {format_vnd(metrics['PMT_thang'])} VND
 - DSR: {metrics['DSR']*100:.1f}% (chuẩn ≤80%)
 - LTV: {metrics['LTV']*100:.1f}% (chuẩn ≤80%)
 - E/C: {metrics['E_over_C']*100:.1f}% (chuẩn ≥20%)
@@ -694,4 +689,3 @@ with col_clear:
     if st.button("🗑️ Xóa chat"):
         st.session_state.chat_messages = []
         st.rerun()
-
