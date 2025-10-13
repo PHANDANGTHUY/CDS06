@@ -695,16 +695,3 @@ with col_clear:
         st.session_state.chat_messages = []
         st.rerun()
 
-with col_export:
-    # Export ZIP (giữ lại nhưng nhỏ gọn hơn)
-    try:
-        zip_bytes = make_zip_for_download()
-        st.download_button(
-            label="📦 Tải mã nguồn",
-            data=zip_bytes,
-            file_name="pasdv_app.zip",
-            mime="application/zip",
-            help="Download source code"
-        )
-    except:
-        pass
