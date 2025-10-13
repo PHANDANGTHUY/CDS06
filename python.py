@@ -63,19 +63,14 @@ def vnd_to_float(s: str) -> float:
     if s is None:
         return 0.0
     s = str(s)
-    # Nếu có thập phân kiểu VN (,) thì đổi tạm sang . để parse
     if "," in s and "." in s:
-        # trường hợp như 1.234.567,89
         s = s.replace(".", "").replace(",", ".")
     elif "," in s and "." not in s:
-        # trường hợp 1234567,89 hoặc 1,234 -> coi là thập phân
-        s = s.replace(".", "")  # đề phòng có lẫn .
+        s = s.replace(".", "")
         s = s.replace(",", ".")
     else:
-        # chỉ có . là phân cách nghìn
         s = s.replace(".", "")
 
-    # bỏ ký tự tiền tệ
     s = s.replace("đ", "").replace("VND", "").replace("vnđ", "").replace("₫", "").replace(" ", "")
     s = re.sub(r"[^\d\.\-]", "", s)
     try:
@@ -83,7 +78,6 @@ def vnd_to_float(s: str) -> float:
     except Exception:
         return 0.0
 
-# === ĐỊNH DẠNG SỐ KIỂU VIỆT NAM (hàng nghìn = '.', thập phân = ',') ===
 def format_vnd(amount: float) -> str:
     """Định dạng tiền VND: 1.234.567"""
     try:
@@ -94,12 +88,11 @@ def format_vnd(amount: float) -> str:
 def format_vnd_float(amount: float) -> str:
     """Định dạng số thập phân kiểu VN: 1.234.567,89"""
     try:
-        s = f"{float(amount):,.2f}"   # 1,234,567.89
+        s = f"{float(amount):,.2f}"
         s = s.replace(",", "_").replace(".", ",").replace("_", ".")
         return s
     except Exception:
         return "0,00"
-# === HẾT PHẦN ĐỊNH DẠNG ===
 
 def percent_to_float(s: str) -> float:
     """Chuyển đổi chuỗi phần trăm sang số float; chấp nhận '8,5' hoặc '8.5'."""
@@ -109,30 +102,19 @@ def percent_to_float(s: str) -> float:
     m = re.search(r"(\d+(?:\.\d+)?)", s)
     return float(m.group(1)) if m else 0.0
 
-# ====== CÁC Ô NHẬP LIỆU KIỂU VIỆT NAM ======
 def vn_money_input(label: str, value: float, key: Optional[str] = None, help: Optional[str] = None) -> float:
-    """
-    Ô nhập tiền tệ kiểu VN: hiển thị 1.234.567 và parse lại về float.
-    Hỗ trợ người dùng dán số không dấu hoặc có dấu '.' ','.
-    """
+    """Ô nhập tiền tệ kiểu VN: hiển thị 1.234.567 và parse lại về float."""
     raw = st.text_input(label, value=format_vnd(value), key=key, help=help)
     return float(vnd_to_float(raw))
 
 def vn_percent_input(label: str, value: float, key: Optional[str] = None, help: Optional[str] = None) -> float:
-    """
-    Ô nhập phần trăm linh hoạt: cho phép nhập '8,5' hoặc '8.5'.
-    Trả về float dùng '.' nội bộ.
-    """
+    """Ô nhập phần trăm linh hoạt: cho phép nhập '8,5' hoặc '8.5'."""
     shown = f"{float(value):.2f}".replace(".", ",")
     raw = st.text_input(label, value=shown, key=key, help=help)
     return percent_to_float(raw)
-# ===========================================
 
 def extract_from_docx(file_bytes: bytes) -> Dict[str, Any]:
-    """
-    Đọc .docx PASDV và trích xuất thông tin theo cấu trúc thực tế.
-    Xử lý nhiều người vay, các trường đặc thù của Agribank.
-    """
+    """Đọc .docx PASDV và trích xuất thông tin theo cấu trúc thực tế."""
     data = FIELD_DEFAULTS.copy()
     if Document is None:
         return data
@@ -141,24 +123,20 @@ def extract_from_docx(file_bytes: bytes) -> Dict[str, Any]:
     doc = Document(bio)
     full_text = "\n".join([p.text for p in doc.paragraphs])
 
-    # Chuẩn hóa: loại bỏ khoảng trắng thừa nhưng giữ nguyên dòng
     lines = [line.strip() for line in full_text.split('\n') if line.strip()]
     full_text = "\n".join(lines)
 
     # === 1. THÔNG TIN KHÁCH HÀNG ===
-    # Pattern linh hoạt hỗ trợ cả "Họ và tên:" và "Ông (bà):"
     ten_pattern1 = r"(?:\d+\.\s*)?Họ\s+và\s+tên\s*[:：]\s*([A-ZÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬĐÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴ][a-zàáảãạăằắẳẵặâầấẨẫậđèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵA-ZÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬĐÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴ\s]+)"
     m = re.search(ten_pattern1, full_text, flags=re.IGNORECASE)
     if m:
         data["ten_khach_hang"] = m.group(1).strip()
     else:
-        # Thử pattern dạng "Ông (bà):"
         ten_pattern2 = r"(?:Ông|Bà)\s*\((?:bà|ông)\)\s*[:：]\s*([A-ZÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬĐÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴ][a-zàáảãạăằắẳẵặâầấẨẫậđèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵA-ZÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬĐÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴ\s]+)"
         m = re.search(ten_pattern2, full_text, flags=re.IGNORECASE)
         if m:
             data["ten_khach_hang"] = m.group(1).strip()
     
-    # Pattern linh hoạt cho CMND/CCCD, hỗ trợ cả "CMND/CCCD/hộ chiếu:" và "CCCD:" đơn giản
     cccd_pattern = r"(?:CMND|CCCD)(?:\/(?:CCCD|CMND))?(?:\/hộ\s*chiếu)?\s*[:：]\s*(\d{9,12})"
     m = re.search(cccd_pattern, full_text, flags=re.IGNORECASE)
     if m:
@@ -252,11 +230,9 @@ def extract_from_docx(file_bytes: bytes) -> Dict[str, Any]:
     if data["tong_nhu_cau_von"] == 0 and (data["von_doi_ung"] + data["so_tien_vay"] > 0):
         data["tong_nhu_cau_von"] = data["von_doi_ung"] + data["so_tien_vay"]
 
-    # Giả định tổng vốn đầu tư là tổng nhu cầu vốn nếu thông tin thiếu
     if data["tong_von_dau_tu"] == 0:
         data["tong_von_dau_tu"] = data["tong_nhu_cau_von"]
 
-    # Giả định giá trị TSĐB bằng tổng nhu cầu vốn (nếu là mua/xây dựng tài sản)
     if data["gia_tri_tsdb"] == 0 and data["tong_nhu_cau_von"] > 0:
         data["gia_tri_tsdb"] = data["tong_nhu_cau_von"]
 
@@ -306,7 +282,6 @@ def style_schedule_table(df: pd.DataFrame) -> pd.DataFrame:
             return ['background-color: #ffffff'] * len(row)
 
     styled = df.style.apply(color_row, axis=1)
-    # Định dạng số tiền theo kiểu VN
     styled = styled.format({
         'Tiền lãi': lambda x: format_vnd(x),
         'Tiền gốc': lambda x: format_vnd(x),
@@ -450,4 +425,32 @@ def create_metrics_chart(metrics: Dict[str, Any]):
     st.plotly_chart(fig, use_container_width=True)
 
 
-def
+def gemini_analyze(d: Dict[str, Any], metrics: Dict[str, Any], model_name: str, api_key: str) -> str:
+    if genai is None:
+        return "Thư viện google-generativeai chưa được cài. Vui lòng thêm 'google-generativeai' vào requirements.txt."
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel(model_name)
+
+        d_formatted = {k: format_vnd(v) if isinstance(v, (int, float)) and k != 'lai_suat_nam' else v for k, v in d.items()}
+        metrics_formatted = {
+            k: (f"{v*100:,.1f}%"
+                if k not in ["PMT_thang", "Debt_over_Income", "Score_AI_demo"] and not np.isnan(v)
+                else format_vnd(v) if k == "PMT_thang"
+                else f"{v:,.2f}")
+            for k, v in metrics.items()
+        }
+
+        prompt = f"""
+Bạn là chuyên viên tín dụng. Phân tích hồ sơ vay sau (JSON) và đưa ra đề xuất "Cho vay" / "Cho vay có điều kiện" / "Không cho vay" kèm giải thích ngắn gọn (<=200 từ).
+JSON đầu vào:
+Khách hàng & phương án: {json.dumps(d_formatted, ensure_ascii=False)}
+Chỉ tiêu tính toán: {json.dumps(metrics_formatted, ensure_ascii=False)}
+Ngưỡng tham chiếu:
+- DSR ≤ 0.8; LTV ≤ 0.8; E/C ≥ 0.2; CFR > 0; Coverage > 1.2.
+- Nếu thông tin thiếu, hãy nêu giả định rõ ràng.
+"""
+        resp = model.generate_content(prompt)
+        return resp.text or "(Không có nội dung từ Gemini)"
+    except Exception as e:
+        return f"
