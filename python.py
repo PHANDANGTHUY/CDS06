@@ -30,7 +30,7 @@ except Exception:
 # Plotly cho biểu đồ
 try:
     import plotly.graph_objects as go
-    import plotly.express as px # Thêm plotly.express
+    import plotly.express as px  # Thêm plotly.express
 except Exception:
     go = None
     px = None
@@ -59,39 +59,74 @@ FIELD_DEFAULTS = {
 }
 
 def vnd_to_float(s: str) -> float:
-    """Chuyển đổi chuỗi tiền tệ VND (dấu chấm là phân cách hàng nghìn) sang số float"""
+    """Chuyển chuỗi tiền tệ VN về float (hỗ trợ dấu . ngăn cách, , thập phân)."""
     if s is None:
         return 0.0
-    # Xóa dấu phân cách hàng nghìn (.) và các ký tự không phải số/dấu trừ
-    s = str(s).replace(".", "").replace(",", "").replace(" ", "")
-    s = s.replace("đ", "").replace("VND", "").replace("vnđ", "").replace("₫", "")
-    s = re.sub(r"[^\d\-]", "", s)
+    s = str(s)
+    # Nếu có thập phân kiểu VN (,) thì đổi tạm sang . để parse
+    if "," in s and "." in s:
+        # trường hợp như 1.234.567,89
+        s = s.replace(".", "").replace(",", ".")
+    elif "," in s and "." not in s:
+        # trường hợp 1234567,89 hoặc 1,234 -> coi là thập phân
+        s = s.replace(".", "")  # đề phòng có lẫn .
+        s = s.replace(",", ".")
+    else:
+        # chỉ có . là phân cách nghìn
+        s = s.replace(".", "")
+
+    # bỏ ký tự tiền tệ
+    s = s.replace("đ", "").replace("VND", "").replace("vnđ", "").replace("₫", "").replace(" ", "")
+    s = re.sub(r"[^\d\.\-]", "", s)
     try:
-        return float(s)
+        return float(s) if s else 0.0
     except Exception:
         return 0.0
 
 # === ĐỊNH DẠNG SỐ KIỂU VIỆT NAM (hàng nghìn = '.', thập phân = ',') ===
 def format_vnd(amount: float) -> str:
     """Định dạng tiền VND: 1.234.567"""
-    return f"{amount:,.0f}".replace(",", ".")
+    try:
+        return f"{float(amount):,.0f}".replace(",", ".")
+    except Exception:
+        return "0"
 
 def format_vnd_float(amount: float) -> str:
     """Định dạng số thập phân kiểu VN: 1.234.567,89"""
-    s = f"{amount:,.2f}"          # 1,234,567.89
-    s = s.replace(",", "_")       # 1_234_567.89
-    s = s.replace(".", ",")       # 1_234_567,89
-    s = s.replace("_", ".")       # 1.234.567,89
-    return s
+    try:
+        s = f"{float(amount):,.2f}"   # 1,234,567.89
+        s = s.replace(",", "_").replace(".", ",").replace("_", ".")
+        return s
+    except Exception:
+        return "0,00"
 # === HẾT PHẦN ĐỊNH DẠNG ===
 
 def percent_to_float(s: str) -> float:
-    """Chuyển đổi chuỗi phần trăm sang số float"""
+    """Chuyển đổi chuỗi phần trăm sang số float; chấp nhận '8,5' hoặc '8.5'."""
     if s is None:
         return 0.0
     s = str(s).replace(",", ".")
     m = re.search(r"(\d+(?:\.\d+)?)", s)
     return float(m.group(1)) if m else 0.0
+
+# ====== CÁC Ô NHẬP LIỆU KIỂU VIỆT NAM ======
+def vn_money_input(label: str, value: float, key: Optional[str] = None, help: Optional[str] = None) -> float:
+    """
+    Ô nhập tiền tệ kiểu VN: hiển thị 1.234.567 và parse lại về float.
+    Hỗ trợ người dùng dán số không dấu hoặc có dấu '.' ','.
+    """
+    raw = st.text_input(label, value=format_vnd(value), key=key, help=help)
+    return float(vnd_to_float(raw))
+
+def vn_percent_input(label: str, value: float, key: Optional[str] = None, help: Optional[str] = None) -> float:
+    """
+    Ô nhập phần trăm linh hoạt: cho phép nhập '8,5' hoặc '8.5'.
+    Trả về float dùng '.' nội bộ.
+    """
+    shown = f"{float(value):.2f}".replace(".", ",")
+    raw = st.text_input(label, value=shown, key=key, help=help)
+    return percent_to_float(raw)
+# ===========================================
 
 def extract_from_docx(file_bytes: bytes) -> Dict[str, Any]:
     """
@@ -105,7 +140,7 @@ def extract_from_docx(file_bytes: bytes) -> Dict[str, Any]:
     bio = io.BytesIO(file_bytes)
     doc = Document(bio)
     full_text = "\n".join([p.text for p in doc.paragraphs])
-    
+
     # Chuẩn hóa: loại bỏ khoảng trắng thừa nhưng giữ nguyên dòng
     lines = [line.strip() for line in full_text.split('\n') if line.strip()]
     full_text = "\n".join(lines)
@@ -208,11 +243,11 @@ def extract_from_docx(file_bytes: bytes) -> Dict[str, Any]:
 
     if data["tong_nhu_cau_von"] == 0 and (data["von_doi_ung"] + data["so_tien_vay"] > 0):
         data["tong_nhu_cau_von"] = data["von_doi_ung"] + data["so_tien_vay"]
-    
+
     # Giả định tổng vốn đầu tư là tổng nhu cầu vốn nếu thông tin thiếu
     if data["tong_von_dau_tu"] == 0:
         data["tong_von_dau_tu"] = data["tong_nhu_cau_von"]
-    
+
     # Giả định giá trị TSĐB bằng tổng nhu cầu vốn (nếu là mua/xây dựng tài sản)
     if data["gia_tri_tsdb"] == 0 and data["tong_nhu_cau_von"] > 0:
         data["gia_tri_tsdb"] = data["tong_nhu_cau_von"]
@@ -230,7 +265,7 @@ def annuity_payment(principal: float, annual_rate_pct: float, months: int) -> fl
     return pmt
 
 
-def build_amortization(principal: float, annual_rate_pct: float, months: int, start_date: Optional[dt.date]=None) -> pd.DataFrame:
+def build_amortization(principal: float, annual_rate_pct: float, months: int, start_date: Optional[dt.date] = None) -> pd.DataFrame:
     if start_date is None:
         start_date = dt.date.today()
     r = annual_rate_pct / 100.0 / 12.0
@@ -261,7 +296,7 @@ def style_schedule_table(df: pd.DataFrame) -> pd.DataFrame:
             return ['background-color: #f0f8ff'] * len(row)
         else:
             return ['background-color: #ffffff'] * len(row)
-    
+
     styled = df.style.apply(color_row, axis=1)
     # Định dạng số tiền theo kiểu VN
     styled = styled.format({
@@ -277,7 +312,7 @@ def style_schedule_table(df: pd.DataFrame) -> pd.DataFrame:
     styled = styled.set_properties(**{
         'text-align': 'center'
     }, subset=['Kỳ', 'Ngày thanh toán'])
-    
+
     return styled
 
 
@@ -334,7 +369,7 @@ def create_metrics_chart(metrics: Dict[str, Any]):
             metrics.get("Coverage", np.nan),
             metrics.get("CFR", np.nan),
         ],
-        "Ngưỡng tham chiếu": [0.8, 0.8, 0.2, 1.2, 0.0] # DSR, LTV <= 0.8; E/C >= 0.2; Coverage >= 1.2; CFR > 0
+        "Ngưỡng tham chiếu": [0.8, 0.8, 0.2, 1.2, 0.0]  # DSR, LTV <= 0.8; E/C >= 0.2; Coverage >= 1.2; CFR > 0
     })
     # Chỉ giữ lại các chỉ tiêu có giá trị (không phải NaN)
     df_metrics = df_metrics.dropna(subset=['Giá trị']).reset_index(drop=True)
@@ -347,9 +382,9 @@ def create_metrics_chart(metrics: Dict[str, Any]):
         metric = row['Chỉ tiêu']
         value = row['Giá trị']
         ref = row['Ngưỡng tham chiếu']
-        if metric in ["DSR", "LTV"]: # Càng thấp càng tốt (dưới ngưỡng)
+        if metric in ["DSR", "LTV"]:  # Càng thấp càng tốt (dưới ngưỡng)
             return "green" if value <= ref else "red"
-        elif metric in ["E/C", "Coverage", "CFR"]: # Càng cao càng tốt (trên ngưỡng)
+        elif metric in ["E/C", "Coverage", "CFR"]:  # Càng cao càng tốt (trên ngưỡng)
             return "green" if value >= ref else "red"
         return "gray"
 
@@ -417,7 +452,7 @@ def gemini_analyze(d: Dict[str, Any], metrics: Dict[str, Any], model_name: str, 
     try:
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel(model_name)
-        
+
         # Định dạng số tiền kiểu VN trong prompt
         d_formatted = {k: format_vnd(v) if isinstance(v, (int, float)) and k != 'lai_suat_nam' else v for k, v in d.items()}
         metrics_formatted = {
@@ -427,7 +462,7 @@ def gemini_analyze(d: Dict[str, Any], metrics: Dict[str, Any], model_name: str, 
                 else f"{v:,.2f}")
             for k, v in metrics.items()
         }
-        
+
         prompt = f"""
 Bạn là chuyên viên tín dụng. Phân tích hồ sơ vay sau (JSON) và đưa ra đề xuất "Cho vay" / "Cho vay có điều kiện" / "Không cho vay" kèm giải thích ngắn gọn (<=200 từ).
 JSON đầu vào:
@@ -468,7 +503,6 @@ with st.sidebar:
     st.markdown("---")
     st.write("📦 Xuất ZIP mã nguồn để đưa lên GitHub/Streamlit Cloud ở cuối trang.")
 
-
 uploaded = st.file_uploader("Tải lên hồ sơ phương án pasdv.docx", type=["docx"], help="Chỉ cần một file .docx")
 data = FIELD_DEFAULTS.copy()
 
@@ -499,30 +533,32 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# number_input vẫn để format kỹ thuật số để nhập dễ, hiển thị ra dùng format_vnd
+# ======= NHẬP LIỆU KIỂU VIỆT NAM (dấu . ngăn cách nghìn) =======
 col1, col2, col3 = st.columns(3)
 with col1:
     data["ten_khach_hang"] = st.text_input("Họ tên KH", value=data["ten_khach_hang"])
     data["cccd"] = st.text_input("CCCD/CMND", value=data["cccd"])
     data["noi_cu_tru"] = st.text_input("Nơi cư trú", value=data["noi_cu_tru"])
     data["so_dien_thoai"] = st.text_input("Số điện thoại", value=data["so_dien_thoai"])
+
 with col2:
     data["muc_dich_vay"] = st.text_input("Mục đích vay", value=data["muc_dich_vay"])
-    data["tong_nhu_cau_von"] = st.number_input("Tổng nhu cầu vốn (VND)", value=float(data["tong_nhu_cau_von"]), min_value=0.0, step=1_000_000.0, format="%f")
-    data["von_doi_ung"] = st.number_input("Vốn đối ứng (VND)", value=float(data["von_doi_ung"]), min_value=0.0, step=1_000_000.0, format="%f")
-    data["so_tien_vay"] = st.number_input("Số tiền vay (VND)", value=float(data["so_tien_vay"]), min_value=0.0, step=1_000_000.0, format="%f")
+    data["tong_nhu_cau_von"] = vn_money_input("Tổng nhu cầu vốn (VND)", data["tong_nhu_cau_von"])
+    data["von_doi_ung"] = vn_money_input("Vốn đối ứng (VND)", data["von_doi_ung"])
+    data["so_tien_vay"] = vn_money_input("Số tiền vay (VND)", data["so_tien_vay"])
+
 with col3:
-    data["lai_suat_nam"] = st.number_input("Lãi suất (%/năm)", value=float(data["lai_suat_nam"]), min_value=0.0, max_value=100.0, step=0.1, format="%.2f")
+    data["lai_suat_nam"] = vn_percent_input("Lãi suất (%/năm)", data["lai_suat_nam"])  # '8,50' OK
     data["thoi_gian_vay_thang"] = st.number_input("Thời gian vay (tháng)", value=int(data["thoi_gian_vay_thang"]), min_value=1, max_value=480, step=1)
-    data["thu_nhap_thang"] = st.number_input("Thu nhập tháng (VND)", value=float(data["thu_nhap_thang"]), min_value=0.0, step=1_000_000.0, format="%f")
-    data["gia_tri_tsdb"] = st.number_input("Giá trị TSĐB (VND)", value=float(data["gia_tri_tsdb"]), min_value=0.0, step=1_000_000.0, format="%f")
+    data["thu_nhap_thang"] = vn_money_input("Thu nhập tháng (VND)", data["thu_nhap_thang"])
+    data["gia_tri_tsdb"] = vn_money_input("Giá trị TSĐB (VND)", data["gia_tri_tsdb"])
 
 col4, col5 = st.columns(2)
 with col4:
-    data["tong_no_hien_tai"] = st.number_input("Tổng nợ hiện tại (VND)", value=float(data["tong_no_hien_tai"]), min_value=0.0, step=1_000_000.0, format="%f")
+    data["tong_no_hien_tai"] = vn_money_input("Tổng nợ hiện tại (VND)", data["tong_no_hien_tai"])
 with col5:
-    data["tong_von_dau_tu"] = st.number_input("Tổng vốn đầu tư (VND)", value=float(data["tong_von_dau_tu"]), min_value=0.0, step=1_000_000.0, format="%f")
-    data["loi_nhuan_rong_nam"] = st.number_input("Lợi nhuận ròng năm (VND)", value=float(data["loi_nhuan_rong_nam"]), min_value=0.0, step=1_000_000.0, format="%f")
+    data["tong_von_dau_tu"] = vn_money_input("Tổng vốn đầu tư (VND)", data["tong_von_dau_tu"])
+    data["loi_nhuan_rong_nam"] = vn_money_input("Lợi nhuận ròng năm (VND)", data["loi_nhuan_rong_nam"])
 
 # Metrics
 st.markdown("---")
@@ -537,7 +573,7 @@ else:
 
 mcol1, mcol2, mcol3, mcol4 = st.columns(4)
 with mcol1:
-    st.metric("PMT (VND/tháng)", f"{format_vnd(metrics['PMT_thang'])}") 
+    st.metric("PMT (VND/tháng)", f"{format_vnd(metrics['PMT_thang'])}")
     st.metric("DSR (≤80%)", f"{metrics['DSR']*100:,.1f}%" if not np.isnan(metrics["DSR"]) else "n/a")
 with mcol2:
     st.metric("LTV (≤80%)", f"{metrics['LTV']*100:,.1f}%" if not np.isnan(metrics["LTV"]) else "n/a")
@@ -575,7 +611,7 @@ out = io.BytesIO()
 with pd.ExcelWriter(out, engine="openpyxl") as writer:
     # Đưa sang chuỗi định dạng kiểu VN trước khi lưu (như yêu cầu)
     df_data = pd.DataFrame([data])
-    for col in ['tong_nhu_cau_von', 'von_doi_ung', 'so_tien_vay', 'thu_nhap_thang', 
+    for col in ['tong_nhu_cau_von', 'von_doi_ung', 'so_tien_vay', 'thu_nhap_thang',
                 'gia_tri_tsdb', 'tong_no_hien_tai', 'loi_nhuan_rong_nam', 'tong_von_dau_tu']:
         if col in df_data.columns:
             df_data[col] = df_data[col].apply(lambda x: format_vnd(x) if x is not None else None)
@@ -584,10 +620,10 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
     for col in ['PMT_thang']:
         if col in df_metrics.columns:
             df_metrics[col] = df_metrics[col].apply(lambda x: format_vnd(x) if x is not None else None)
-    
+
     # Định dạng các chỉ số tỷ lệ
     for col in ['DSR', 'LTV', 'E_over_C', 'CFR', 'Coverage', 'ROI']:
-         if col in df_metrics.columns:
+        if col in df_metrics.columns:
             df_metrics[col] = df_metrics[col].apply(lambda x: f"{x*100:,.2f}%" if not np.isnan(x) else 'n/a')
 
     df_data.to_excel(writer, sheet_name="Thong_tin", index=False)
@@ -624,7 +660,7 @@ if prompt := st.chat_input("Hỏi AI về hồ sơ này... (VD: Đánh giá kh�
     st.session_state.chat_messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
-    
+
     # Gọi Gemini để trả lời
     with st.chat_message("assistant"):
         if not api_key:
@@ -638,7 +674,7 @@ if prompt := st.chat_input("Hỏi AI về hồ sơ này... (VD: Đánh giá kh�
                 with st.spinner("🤔 AI đang suy nghĩ..."):
                     genai.configure(api_key=api_key)
                     model = genai.GenerativeModel(model_name)
-                    
+
                     # Tạo context từ dữ liệu hồ sơ (hiển thị kiểu VN)
                     context = f"""
 Bạn là chuyên viên tín dụng chuyên nghiệp. Dưới đây là thông tin hồ sơ vay:
@@ -670,16 +706,15 @@ Bạn là chuyên viên tín dụng chuyên nghiệp. Dưới đây là thông t
 
 Hãy trả lời câu hỏi sau dựa trên thông tin trên, sử dụng tiếng Việt chuyên nghiệp nhưng dễ hiểu:
 """
-                    
                     full_prompt = context + "\n\nCâu hỏi: " + prompt
                     resp = model.generate_content(full_prompt)
                     response = resp.text if resp.text else "⚠️ Không nhận được phản hồi từ AI."
                     st.markdown(response)
-                    
+
             except Exception as e:
                 response = f"❌ Lỗi khi gọi Gemini: {str(e)}"
                 st.error(response)
-        
+
         # Lưu câu trả lời vào lịch sử
         st.session_state.chat_messages.append({"role": "assistant", "content": response})
 
