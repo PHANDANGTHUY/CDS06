@@ -4,6 +4,5 @@ pandas>=2.2.0
 numpy>=1.26.0
 openpyxl>=3.1.2
 google-generativeai>=0.7.0
-plotly
-fpdf2
-python-docx
+plotly>=5.18.0
+fpdf2>=2.7.0
