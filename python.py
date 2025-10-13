@@ -1,3 +1,4 @@
+```python
 # -*- coding: utf-8 -*-
 """
 Streamlit app: Thẩm định phương án kinh doanh/ sử dụng vốn (pasdv.docx)
@@ -16,6 +17,9 @@ import streamlit as st
 # Docx parsing
 try:
     from docx import Document
+    from docx.shared import Pt, RGBColor, Inches
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.table import WD_TABLE_ALIGNMENT
 except Exception:
     Document = None
 # Gemini
@@ -30,7 +34,7 @@ try:
 except Exception:
     go = None
     px = None
-st.set_page_config(page_title="PASDV - Thẩm định phương án", page_icon="", layout="wide")
+st.set_page_config(page_title="PASDV - Thẩm định phương án", page_icon="💼", layout="wide")
 # ========================== Helpers ==========================
 FIELD_DEFAULTS = {
     "ten_khach_hang": "",
@@ -396,160 +400,185 @@ Ngưỡng tham chiếu:
 def make_zip_for_download() -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        for fname in ["python.py", "requirements.txt", "README.md"]:
+        for fname in ["app.py", "requirements.txt", "README.md"]:
             if os.path.exists(fname):
                 z.write(fname, arcname=fname)
     buf.seek(0)
     return buf.read()
 def export_to_docx(data: Dict[str, Any], metrics: Dict[str, Any], schedule_df: pd.DataFrame, analysis: str = "") -> bytes:
-    """Xuất báo cáo thẩm định ra file DOCX"""
+    """Xuất báo cáo thẩm định ra file DOCX với định dạng đẹp mắt"""
     if Document is None:
         return b""
-   
+    
     doc = Document()
-   
-    # Tiêu đề chính
-    title = doc.add_heading('BÁO CÁO THẨM ĐỊNH PHƯƠNG ÁN SỬ DỤNG VỐN', 0)
-    title.alignment = 1 # Center
-   
-    # Ngày báo cáo
-    doc.add_paragraph(f'Ngày báo cáo: {dt.date.today().strftime("%d/%m/%Y")}', style='Subtitle')
+    
+    # Thiết lập font mặc định
+    from docx.oxml.ns import qn
+    doc.styles['Normal'].font.name = 'Times New Roman'
+    doc.styles['Normal']._element.rPr.rFonts.set(qn('w:eastAsia'), 'Times New Roman')
+    doc.styles['Normal'].font.size = Pt(12)
+    
+    # Trang bìa
+    doc.add_paragraph("NGÂN HÀNG NÔNG NGHIỆP VÀ PHÁT TRIỂN NÔNG THÔN VIỆT NAM", style='Title').alignment = WD_ALIGN_PARAGRAPH.CENTER
+    doc.add_paragraph("BÁO CÁO THẨM ĐỊNH PHƯƠNG ÁN SỬ DỤNG VỐN", style='Title').alignment = WD_ALIGN_PARAGRAPH.CENTER
+    doc.add_paragraph(f"Ngày báo cáo: {dt.date.today().strftime('%d/%m/%Y')}", style='Subtitle').alignment = WD_ALIGN_PARAGRAPH.CENTER
     doc.add_paragraph()
-   
+    doc.add_page_break()
+    
     # PHẦN I: THÔNG TIN KHÁCH HÀNG
     doc.add_heading('I. THÔNG TIN KHÁCH HÀNG', 1)
-   
     table1 = doc.add_table(rows=5, cols=2)
-    table1.style = 'Light Grid Accent 1'
-   
+    table1.style = 'Table Grid'
+    table1.alignment = WD_TABLE_ALIGNMENT.CENTER
+    table1.autofit = True
+    for row in table1.rows:
+        for cell in row.cells:
+            cell.paragraphs[0].style.font.size = Pt(11)
+            cell.paragraphs[0].style.font.name = 'Times New Roman'
+    
     cells = table1.rows[0].cells
     cells[0].text = 'Họ và tên:'
     cells[1].text = data.get('ten_khach_hang', '')
-   
+    
     cells = table1.rows[1].cells
     cells[0].text = 'CMND/CCCD:'
     cells[1].text = data.get('cccd', '')
-   
+    
     cells = table1.rows[2].cells
     cells[0].text = 'Nơi cư trú:'
     cells[1].text = data.get('noi_cu_tru', '')
-   
+    
     cells = table1.rows[3].cells
     cells[0].text = 'Số điện thoại:'
     cells[1].text = data.get('so_dien_thoai', '')
-   
+    
     cells = table1.rows[4].cells
     cells[0].text = 'Mục đích vay:'
     cells[1].text = data.get('muc_dich_vay', '')
-   
+    
     doc.add_paragraph()
-   
+    
     # PHẦN II: THÔNG TIN KHOẢN VAY
     doc.add_heading('II. THÔNG TIN KHOẢN VAY', 1)
-   
     table2 = doc.add_table(rows=7, cols=2)
-    table2.style = 'Light Grid Accent 1'
-   
+    table2.style = 'Table Grid'
+    table2.alignment = WD_TABLE_ALIGNMENT.CENTER
+    table2.autofit = True
+    for row in table2.rows:
+        for cell in row.cells:
+            cell.paragraphs[0].style.font.size = Pt(11)
+            cell.paragraphs[0].style.font.name = 'Times New Roman'
+    
     cells = table2.rows[0].cells
     cells[0].text = 'Tổng nhu cầu vốn:'
     cells[1].text = f"{format_vnd(data.get('tong_nhu_cau_von', 0))} VND"
-   
+    
     cells = table2.rows[1].cells
     cells[0].text = 'Vốn đối ứng:'
     cells[1].text = f"{format_vnd(data.get('von_doi_ung', 0))} VND"
-   
+    
     cells = table2.rows[2].cells
     cells[0].text = 'Số tiền vay:'
     cells[1].text = f"{format_vnd(data.get('so_tien_vay', 0))} VND"
-   
+    
     cells = table2.rows[3].cells
     cells[0].text = 'Lãi suất:'
     cells[1].text = f"{data.get('lai_suat_nam', 0):.2f}%/năm"
-   
+    
     cells = table2.rows[4].cells
     cells[0].text = 'Thời hạn vay:'
     cells[1].text = f"{data.get('thoi_gian_vay_thang', 0)} tháng"
-   
+    
     cells = table2.rows[5].cells
     cells[0].text = 'Thu nhập tháng:'
     cells[1].text = f"{format_vnd(data.get('thu_nhap_thang', 0))} VND"
-   
+    
     cells = table2.rows[6].cells
     cells[0].text = 'Giá trị TSĐB:'
     cells[1].text = f"{format_vnd(data.get('gia_tri_tsdb', 0))} VND"
-   
+    
     doc.add_paragraph()
-   
+    
     # PHẦN III: CHỈ TIÊU TÀI CHÍNH
     doc.add_heading('III. CHỈ TIÊU TÀI CHÍNH (CADAP)', 1)
-   
     table3 = doc.add_table(rows=8, cols=3)
-    table3.style = 'Light Grid Accent 1'
-   
-    # Header
+    table3.style = 'Table Grid'
+    table3.alignment = WD_TABLE_ALIGNMENT.CENTER
+    table3.autofit = True
+    for i, row in enumerate(table3.rows):
+        for cell in row.cells:
+            cell.paragraphs[0].style.font.size = Pt(11)
+            cell.paragraphs[0].style.font.name = 'Times New Roman'
+            if i == 0:  # Header row
+                cell.paragraphs[0].style.font.bold = True
+                cell.paragraphs[0].style.font.color.rgb = RGBColor(0, 0, 0)
+            elif i % 2 == 0:
+                cell.paragraphs[0].style.font.color.rgb = RGBColor(0, 0, 139)
+    
     hdr_cells = table3.rows[0].cells
     hdr_cells[0].text = 'Chỉ tiêu'
     hdr_cells[1].text = 'Giá trị'
     hdr_cells[2].text = 'Đánh giá'
-   
-    # PMT
+    
     cells = table3.rows[1].cells
     cells[0].text = 'PMT (Tiền trả/tháng)'
     cells[1].text = f"{format_vnd(metrics.get('PMT_thang', 0))} VND"
     cells[2].text = ''
-   
-    # DSR
+    
     cells = table3.rows[2].cells
     cells[0].text = 'DSR (Debt Service Ratio)'
     dsr = metrics.get('DSR', 0)
     cells[1].text = f"{dsr*100:.1f}%" if not np.isnan(dsr) else 'n/a'
     cells[2].text = '✓ Đạt' if (not np.isnan(dsr) and dsr <= 0.8) else '✗ Không đạt'
-   
-    # LTV
+    
     cells = table3.rows[3].cells
     cells[0].text = 'LTV (Loan to Value)'
     ltv = metrics.get('LTV', 0)
     cells[1].text = f"{ltv*100:.1f}%" if not np.isnan(ltv) else 'n/a'
     cells[2].text = '✓ Đạt' if (not np.isnan(ltv) and ltv <= 0.8) else '✗ Không đạt'
-   
-    # E/C
+    
     cells = table3.rows[4].cells
     cells[0].text = 'E/C (Equity to Capital)'
     ec = metrics.get('E_over_C', 0)
     cells[1].text = f"{ec*100:.1f}%" if not np.isnan(ec) else 'n/a'
     cells[2].text = '✓ Đạt' if (not np.isnan(ec) and ec >= 0.2) else '✗ Không đạt'
-   
-    # CFR
+    
     cells = table3.rows[5].cells
     cells[0].text = 'CFR (Cash Flow Ratio)'
     cfr = metrics.get('CFR', 0)
     cells[1].text = f"{cfr*100:.1f}%" if not np.isnan(cfr) else 'n/a'
     cells[2].text = '✓ Đạt' if (not np.isnan(cfr) and cfr > 0) else '✗ Không đạt'
-   
-    # Coverage
+    
     cells = table3.rows[6].cells
     cells[0].text = 'Coverage (Collateral Coverage)'
     cov = metrics.get('Coverage', 0)
     cells[1].text = f"{cov*100:.1f}%" if not np.isnan(cov) else 'n/a'
     cells[2].text = '✓ Đạt' if (not np.isnan(cov) and cov > 1.2) else '✗ Không đạt'
-   
-    # Score
+    
     cells = table3.rows[7].cells
     cells[0].text = 'Score tổng hợp'
     cells[1].text = f"{metrics.get('Score_AI_demo', 0):.3f}"
     score = metrics.get('Score_AI_demo', 0)
     cells[2].text = '✓ Tốt' if score >= 0.7 else ('⚠ Trung bình' if score >= 0.5 else '✗ Yếu')
-   
+    
     doc.add_paragraph()
-   
+    
     # PHẦN IV: KẾ HOẠCH TRẢ NỢ (5 kỳ đầu)
     doc.add_heading('IV. KẾ HOẠCH TRẢ NỢ (5 kỳ đầu)', 1)
-   
-    n_rows = min(6, len(schedule_df) + 1) # Header + 5 rows data
+    n_rows = min(6, len(schedule_df) + 1)
     table4 = doc.add_table(rows=n_rows, cols=6)
-    table4.style = 'Light Grid Accent 1'
-   
-    # Header
+    table4.style = 'Table Grid'
+    table4.alignment = WD_TABLE_ALIGNMENT.CENTER
+    table4.autofit = True
+    for i, row in enumerate(table4.rows):
+        for cell in row.cells:
+            cell.paragraphs[0].style.font.size = Pt(11)
+            cell.paragraphs[0].style.font.name = 'Times New Roman'
+            if i == 0:  # Header row
+                cell.paragraphs[0].style.font.bold = True
+            elif i % 2 == 0:
+                cell.paragraphs[0].style.font.color.rgb = RGBColor(0, 0, 139)
+    
     hdr_cells = table4.rows[0].cells
     hdr_cells[0].text = 'Kỳ'
     hdr_cells[1].text = 'Ngày'
@@ -557,8 +586,7 @@ def export_to_docx(data: Dict[str, Any], metrics: Dict[str, Any], schedule_df: p
     hdr_cells[3].text = 'Tiền gốc'
     hdr_cells[4].text = 'Tổng trả'
     hdr_cells[5].text = 'Dư nợ'
-   
-    # Data (5 rows đầu)
+    
     for i in range(min(5, len(schedule_df))):
         row = schedule_df.iloc[i]
         cells = table4.rows[i+1].cells
@@ -568,26 +596,27 @@ def export_to_docx(data: Dict[str, Any], metrics: Dict[str, Any], schedule_df: p
         cells[3].text = format_vnd(row['Tiền gốc'])
         cells[4].text = format_vnd(row['Tổng phải trả'])
         cells[5].text = format_vnd(row['Dư nợ còn lại'])
-   
+    
     doc.add_paragraph()
-    doc.add_paragraph(f"(Xem file Excel đính kèm để có đầy đủ {len(schedule_df)} kỳ thanh toán)")
-   
+    p = doc.add_paragraph(f"(Xem file Excel đính kèm để có đầy đủ {len(schedule_df)} kỳ thanh toán)")
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.style.font.size = Pt(10)
+    
     doc.add_paragraph()
-   
+    
     # PHẦN V: PHÂN TÍCH VÀ KẾT LUẬN
     if analysis:
         doc.add_heading('V. PHÂN TÍCH VÀ KẾT LUẬN (AI)', 1)
-        doc.add_paragraph(analysis)
+        p = doc.add_paragraph(analysis)
+        p.style.font.size = Pt(11)
         doc.add_paragraph()
-   
+    
     # PHẦN VI: Ý KIẾN THẨM ĐỊNH
     doc.add_heading('VI. Ý KIẾN THẨM ĐỊNH', 1)
-   
-    # Tự động đưa ra đề xuất dựa trên Score
     score = metrics.get('Score_AI_demo', 0)
     dsr = metrics.get('DSR', 0)
     ltv = metrics.get('LTV', 0)
-   
+    
     if score >= 0.7 and (np.isnan(dsr) or dsr <= 0.8) and (np.isnan(ltv) or ltv <= 0.8):
         de_xuat = "☑ ĐỀ XUẤT CHO VAY"
         ly_do = "Hồ sơ đáp ứng các chỉ tiêu tài chính, khả năng trả nợ tốt, tài sản bảo đảm đầy đủ."
@@ -597,30 +626,171 @@ def export_to_docx(data: Dict[str, Any], metrics: Dict[str, Any], schedule_df: p
     else:
         de_xuat = "☐ KHÔNG ĐỀ XUẤT CHO VAY"
         ly_do = "Hồ sơ không đạt các chỉ tiêu tài chính tối thiểu, rủi ro cao."
-   
-    doc.add_paragraph(de_xuat, style='Heading 3')
-    doc.add_paragraph(f"Lý do: {ly_do}")
+    
+    p = doc.add_paragraph(de_xuat, style='Heading 3')
+    p.style.font.size = Pt(12)
+    p = doc.add_paragraph(f"Lý do: {ly_do}")
+    p.style.font.size = Pt(11)
     doc.add_paragraph()
-   
+    
     # Chữ ký
+    p = doc.add_paragraph('_' * 50)
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     doc.add_paragraph()
-    doc.add_paragraph('_' * 50)
-    doc.add_paragraph()
-   
-    table_sign = doc.add_table(rows=3, cols=2)
+    
+    table_sign = doc.add_table(rows=2, cols=2)
+    table_sign.style = 'Table Grid'
+    table_sign.alignment = WD_TABLE_ALIGNMENT.CENTER
+    table_sign.autofit = True
+    for row in table_sign.rows:
+        for cell in row.cells:
+            cell.paragraphs[0].style.font.size = Pt(11)
+            cell.paragraphs[0].style.font.name = 'Times New Roman'
+    
     cells = table_sign.rows[0].cells
     cells[0].text = 'Người thẩm định'
     cells[1].text = 'Phê duyệt'
-   
+    
     cells = table_sign.rows[1].cells
     cells[0].text = '(Ký, ghi rõ họ tên)'
     cells[1].text = '(Ký, ghi rõ họ tên)'
-   
-    # Save to bytes
+    
     buffer = io.BytesIO()
     doc.save(buffer)
     buffer.seek(0)
     return buffer.read()
+def export_to_pdf(data: Dict[str, Any], metrics: Dict[str, Any], schedule_df: pd.DataFrame, analysis: str = "") -> str:
+    """Xuất báo cáo thẩm định ra LaTeX để tạo PDF"""
+    latex_content = r"""
+\documentclass[a4paper,12pt]{article}
+\usepackage[utf8]{vietnam}
+\usepackage{geometry}
+\geometry{a4paper, margin=1in}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{colortbl}
+\usepackage{setspace}
+\usepackage[sc]{mathpazo}
+\usepackage{noto}
+\renewcommand{\familydefault}{\rmdefault}
+\begin{document}
+
+\begin{titlepage}
+    \centering
+    \vspace*{1cm}
+    {\LARGE \textbf{NGÂN HÀNG NÔNG NGHIỆP VÀ PHÁT TRIỂN NÔNG THÔN VIỆT NAM}\par}
+    \vspace{1cm}
+    {\Huge \textbf{BÁO CÁO THẨM ĐỊNH PHƯƠNG ÁN SỬ DỤNG VỐN}\par}
+    \vspace{2cm}
+    {\large Ngày báo cáo: """ + dt.date.today().strftime("%d/%m/%Y") + r"""\par}
+    \vspace{2cm}
+    {\large \textit{Hồ sơ khách hàng: """ + data.get('ten_khach_hang', 'Không xác định') + r"""}\par}
+\end{titlepage}
+
+\section*{I. Thông tin khách hàng}
+\begin{tabular}{|>{\raggedright\arraybackslash}p{5cm}|>{\raggedright\arraybackslash}p{10cm}|}
+    \hline
+    \textbf{Chỉ tiêu} & \textbf{Giá trị} \\ \hline
+    Họ và tên & """ + data.get('ten_khach_hang', '') + r""" \\ \hline
+    CMND/CCCD & """ + data.get('cccd', '') + r""" \\ \hline
+    Nơi cư trú & """ + data.get('noi_cu_tru', '') + r""" \\ \hline
+    Số điện thoại & """ + data.get('so_dien_thoai', '') + r""" \\ \hline
+    Mục đích vay & """ + data.get('muc_dich_vay', '') + r""" \\ \hline
+\end{tabular}
+
+\vspace{1cm}
+
+\section*{II. Thông tin khoản vay}
+\begin{tabular}{|>{\raggedright\arraybackslash}p{5cm}|>{\raggedright\arraybackslash}p{10cm}|}
+    \hline
+    \textbf{Chỉ tiêu} & \textbf{Giá trị} \\ \hline
+    Tổng nhu cầu vốn & """ + format_vnd(data.get('tong_nhu_cau_von', 0)) + r""" VND \\ \hline
+    Vốn đối ứng & """ + format_vnd(data.get('von_doi_ung', 0)) + r""" VND \\ \hline
+    Số tiền vay & """ + format_vnd(data.get('so_tien_vay', 0)) + r""" VND \\ \hline
+    Lãi suất & """ + f"{data.get('lai_suat_nam', 0):.2f}" + r"""\%/năm \\ \hline
+    Thời hạn vay & """ + f"{data.get('thoi_gian_vay_thang', 0)}" + r""" tháng \\ \hline
+    Thu nhập tháng & """ + format_vnd(data.get('thu_nhap_thang', 0)) + r""" VND \\ \hline
+    Giá trị TSĐB & """ + format_vnd(data.get('gia_tri_tsdb', 0)) + r""" VND \\ \hline
+\end{tabular}
+
+\vspace{1cm}
+
+\section*{III. Chỉ tiêu tài chính (CADAP)}
+\begin{tabular}{|>{\raggedright\arraybackslash}p{5cm}|>{\raggedright\arraybackslash}p{5cm}|>{\raggedright\arraybackslash}p{5cm}|}
+    \hline
+    \textbf{Chỉ tiêu} & \textbf{Giá trị} & \textbf{Đánh giá} \\ \hline
+    PMT (Tiền trả/tháng) & """ + format_vnd(metrics.get('PMT_thang', 0)) + r""" VND & \\ \hline
+    DSR (Debt Service Ratio) & """ + (f"{metrics.get('DSR', 0)*100:.1f}\%" if not np.isnan(metrics.get('DSR', 0)) else 'n/a') + r""" & """ + ('✓ Đạt' if (not np.isnan(metrics.get('DSR', 0)) and metrics.get('DSR', 0) <= 0.8) else '✗ Không đạt') + r""" \\ \hline
+    LTV (Loan to Value) & """ + (f"{metrics.get('LTV', 0)*100:.1f}\%" if not np.isnan(metrics.get('LTV', 0)) else 'n/a') + r""" & """ + ('✓ Đạt' if (not np.isnan(metrics.get('LTV', 0)) and metrics.get('LTV', 0) <= 0.8) else '✗ Không đạt') + r""" \\ \hline
+    E/C (Equity to Capital) & """ + (f"{metrics.get('E_over_C', 0)*100:.1f}\%" if not np.isnan(metrics.get('E_over_C', 0)) else 'n/a') + r""" & """ + ('✓ Đạt' if (not np.isnan(metrics.get('E_over_C', 0)) and metrics.get('E_over_C', 0) >= 0.2) else '✗ Không đạt') + r""" \\ \hline
+    CFR (Cash Flow Ratio) & """ + (f"{metrics.get('CFR', 0)*100:.1f}\%" if not np.isnan(metrics.get('CFR', 0)) else 'n/a') + r""" & """ + ('✓ Đạt' if (not np.isnan(metrics.get('CFR', 0)) and metrics.get('CFR', 0) > 0) else '✗ Không đạt') + r""" \\ \hline
+    Coverage (Collateral Coverage) & """ + (f"{metrics.get('Coverage', 0)*100:.1f}\%" if not np.isnan(metrics.get('Coverage', 0)) else 'n/a') + r""" & """ + ('✓ Đạt' if (not np.isnan(metrics.get('Coverage', 0)) and metrics.get('Coverage', 0) > 1.2) else '✗ Không đạt') + r""" \\ \hline
+    Score tổng hợp & """ + f"{metrics.get('Score_AI_demo', 0):.3f}" + r""" & """ + ('✓ Tốt' if metrics.get('Score_AI_demo', 0) >= 0.7 else ('⚠ Trung bình' if metrics.get('Score_AI_demo', 0) >= 0.5 else '✗ Yếu')) + r""" \\ \hline
+\end{tabular}
+
+\vspace{1cm}
+
+\section*{IV. Kế hoạch trả nợ (5 kỳ đầu)}
+\begin{tabular}{|c|c|r|r|r|r|}
+    \hline
+    \textbf{Kỳ} & \textbf{Ngày} & \textbf{Tiền lãi} & \textbf{Tiền gốc} & \textbf{Tổng trả} & \textbf{Dư nợ} \\ \hline
+"""
+    for i in range(min(5, len(schedule_df))):
+        row = schedule_df.iloc[i]
+        latex_content += f"    {row['Kỳ']} & {row['Ngày thanh toán']} & {format_vnd(row['Tiền lãi'])} & {format_vnd(row['Tiền gốc'])} & {format_vnd(row['Tổng phải trả'])} & {format_vnd(row['Dư nợ còn lại'])} \\\\ \\hline\n"
+    
+    latex_content += r"""
+\end{tabular}
+
+\begin{center}
+(Xem file Excel đính kèm để có đầy đủ """ + str(len(schedule_df)) + r""" kỳ thanh toán)
+\end{center}
+
+\vspace{1cm}
+"""
+    if analysis:
+        latex_content += r"""
+\section*{V. Phân tích và Kết luận (AI)}
+""" + analysis.replace('\n', '\\\\\n') + r"""
+
+\vspace{1cm}
+"""
+    
+    # Ý kiến thẩm định
+    score = metrics.get('Score_AI_demo', 0)
+    dsr = metrics.get('DSR', 0)
+    ltv = metrics.get('LTV', 0)
+    
+    if score >= 0.7 and (np.isnan(dsr) or dsr <= 0.8) and (np.isnan(ltv) or ltv <= 0.8):
+        de_xuat = "☑ ĐỀ XUẤT CHO VAY"
+        ly_do = "Hồ sơ đáp ứng các chỉ tiêu tài chính, khả năng trả nợ tốt, tài sản bảo đảm đầy đủ."
+    elif score >= 0.5:
+        de_xuat = "☑ ĐỀ XUẤT CHO VAY CÓ ĐIỀU KIỆN"
+        ly_do = "Hồ sơ cần bổ sung thêm tài sản bảo đảm hoặc điều chỉnh điều kiện vay để giảm rủi ro."
+    else:
+        de_xuat = "☐ KHÔNG ĐỀ XUẤT CHO VAY"
+        ly_do = "Hồ sơ không đạt các chỉ tiêu tài chính tối thiểu, rủi ro cao."
+    
+    latex_content += r"""
+\section*{VI. Ý kiến thẩm định}
+\textbf{""" + de_xuat + r"""} \\
+Lý do: """ + ly_do + r"""
+
+\vspace{1cm}
+
+\begin{center}
+\rule{5cm}{0.4pt}
+\end{center}
+
+\begin{tabular}{p{7cm}p{7cm}}
+Người thẩm định & Phê duyệt \\
+(Ký, ghi rõ họ tên) & (Ký, ghi rõ họ tên) \\
+\end{tabular}
+
+\end{document}
+"""
+    return latex_content
 # ========================== UI ==========================
 st.title("💼 Thẩm định phương án sử dụng vốn (PASDV)")
 st.caption("Upload .docx → Trích xuất → Chỉnh sửa → Tính chỉ tiêu → Kế hoạch trả nợ → Phân tích AI → Xuất Excel/ZIP")
@@ -745,18 +915,39 @@ if api_key and genai is not None:
     st.write(analysis)
 else:
     st.warning("Chưa có API key Gemini. Điền API key ở Sidebar để dùng tính năng này.")
-    analysis = ""  # Ensure analysis is set even if Gemini is unavailable
-# Thêm nút xuất DOCX
-if Document is not None:
-    docx_buffer = export_to_docx(data, metrics, schedule_df, analysis=analysis)
-    st.download_button(
-        "📄 Tải Báo cáo DOCX",
-        data=docx_buffer,
-        file_name=f"bao_cao_tham_dinh_{data.get('ten_khach_hang', 'khach_hang').replace(' ', '_')}_{dt.date.today().strftime('%Y%m%d')}.docx",
-        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    )
-else:
+    analysis = ""
+# Export Report Section
+st.markdown("---")
+st.subheader("📄 Xuất Báo cáo")
+export_format = st.selectbox("Chọn định dạng báo cáo", ["DOCX", "PDF"], index=0)
+if export_format == "DOCX" and Document is None:
     st.info("📄 Cài đặt python-docx để xuất báo cáo DOCX")
+elif export_format == "PDF":
+    st.info("📄 Báo cáo PDF sẽ được tạo bằng LaTeX (yêu cầu texlive-full và texlive-fonts-extra)")
+if st.button("⬇️ Tải Báo cáo"):
+    file_name = f"bao_cao_tham_dinh_{data.get('ten_khach_hang', 'khach_hang').replace(' ', '_')}_{dt.date.today().strftime('%Y%m%d')}"
+    if export_format == "DOCX" and Document is not None:
+        docx_buffer = export_to_docx(data, metrics, schedule_df, analysis=analysis)
+        st.download_button(
+            "Tải Báo cáo DOCX",
+            data=docx_buffer,
+            file_name=f"{file_name}.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+    elif export_format == "PDF":
+        try:
+            pdf_content = export_to_pdf(data, metrics, schedule_df, analysis=analysis)
+            st.download_button(
+                "Tải Báo cáo PDF",
+                data=pdf_content.encode('utf-8'),
+                file_name=f"{file_name}.tex",
+                mime="text/plain"
+            )
+            st.info("Lưu ý: File .tex cần được biên dịch bằng latexmk với PDFLaTeX để tạo PDF.")
+        except Exception as e:
+            st.error(f"Lỗi khi tạo LaTeX: {e}")
+    else:
+        st.error("Không thể xuất báo cáo do thiếu thư viện python-docx.")
 st.subheader("5) 💬 Trò chuyện với AI về hồ sơ")
 if "chat_messages" not in st.session_state:
     st.session_state.chat_messages = []
@@ -818,3 +1009,4 @@ with col_clear:
     if st.button("🗑️ Xóa chat"):
         st.session_state.chat_messages = []
         st.rerun()
+```
