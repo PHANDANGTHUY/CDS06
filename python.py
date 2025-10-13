@@ -30,7 +30,7 @@ try:
 except Exception:
     go = None
     px = None
-st.set_page_config(page_title="PASDV - Thẩm định phương án", page_icon="💼", layout="wide")
+st.set_page_config(page_title="PASDV - Thẩm định phương án", page_icon="", layout="wide")
 # ========================== Helpers ==========================
 FIELD_DEFAULTS = {
     "ten_khach_hang": "",
