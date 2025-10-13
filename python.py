@@ -466,6 +466,228 @@ def make_zip_for_download() -> bytes:
     return buf.read()
 
 
+def export_to_docx(data: Dict[str, Any], metrics: Dict[str, Any], schedule_df: pd.DataFrame, analysis: str = "") -> bytes:
+    """Xuất báo cáo thẩm định ra file DOCX"""
+    if Document is None:
+        return b""
+    
+    doc = Document()
+    
+    # Tiêu đề chính
+    title = doc.add_heading('BÁO CÁO THẨM ĐỊNH PHƯƠNG ÁN SỬ DỤNG VỐN', 0)
+    title.alignment = 1  # Center
+    
+    # Ngày báo cáo
+    doc.add_paragraph(f'Ngày báo cáo: {dt.date.today().strftime("%d/%m/%Y")}', style='Subtitle')
+    doc.add_paragraph()
+    
+    # PHẦN I: THÔNG TIN KHÁCH HÀNG
+    doc.add_heading('I. THÔNG TIN KHÁCH HÀNG', 1)
+    
+    table1 = doc.add_table(rows=5, cols=2)
+    table1.style = 'Light Grid Accent 1'
+    
+    cells = table1.rows[0].cells
+    cells[0].text = 'Họ và tên:'
+    cells[1].text = data.get('ten_khach_hang', '')
+    
+    cells = table1.rows[1].cells
+    cells[0].text = 'CMND/CCCD:'
+    cells[1].text = data.get('cccd', '')
+    
+    cells = table1.rows[2].cells
+    cells[0].text = 'Nơi cư trú:'
+    cells[1].text = data.get('noi_cu_tru', '')
+    
+    cells = table1.rows[3].cells
+    cells[0].text = 'Số điện thoại:'
+    cells[1].text = data.get('so_dien_thoai', '')
+    
+    cells = table1.rows[4].cells
+    cells[0].text = 'Mục đích vay:'
+    cells[1].text = data.get('muc_dich_vay', '')
+    
+    doc.add_paragraph()
+    
+    # PHẦN II: THÔNG TIN KHOẢN VAY
+    doc.add_heading('II. THÔNG TIN KHOẢN VAY', 1)
+    
+    table2 = doc.add_table(rows=7, cols=2)
+    table2.style = 'Light Grid Accent 1'
+    
+    cells = table2.rows[0].cells
+    cells[0].text = 'Tổng nhu cầu vốn:'
+    cells[1].text = f"{format_vnd(data.get('tong_nhu_cau_von', 0))} VND"
+    
+    cells = table2.rows[1].cells
+    cells[0].text = 'Vốn đối ứng:'
+    cells[1].text = f"{format_vnd(data.get('von_doi_ung', 0))} VND"
+    
+    cells = table2.rows[2].cells
+    cells[0].text = 'Số tiền vay:'
+    cells[1].text = f"{format_vnd(data.get('so_tien_vay', 0))} VND"
+    
+    cells = table2.rows[3].cells
+    cells[0].text = 'Lãi suất:'
+    cells[1].text = f"{data.get('lai_suat_nam', 0):.2f}%/năm"
+    
+    cells = table2.rows[4].cells
+    cells[0].text = 'Thời hạn vay:'
+    cells[1].text = f"{data.get('thoi_gian_vay_thang', 0)} tháng"
+    
+    cells = table2.rows[5].cells
+    cells[0].text = 'Thu nhập tháng:'
+    cells[1].text = f"{format_vnd(data.get('thu_nhap_thang', 0))} VND"
+    
+    cells = table2.rows[6].cells
+    cells[0].text = 'Giá trị TSĐB:'
+    cells[1].text = f"{format_vnd(data.get('gia_tri_tsdb', 0))} VND"
+    
+    doc.add_paragraph()
+    
+    # PHẦN III: CHỈ TIÊU TÀI CHÍNH
+    doc.add_heading('III. CHỈ TIÊU TÀI CHÍNH (CADAP)', 1)
+    
+    table3 = doc.add_table(rows=8, cols=3)
+    table3.style = 'Light Grid Accent 1'
+    
+    # Header
+    hdr_cells = table3.rows[0].cells
+    hdr_cells[0].text = 'Chỉ tiêu'
+    hdr_cells[1].text = 'Giá trị'
+    hdr_cells[2].text = 'Đánh giá'
+    
+    # PMT
+    cells = table3.rows[1].cells
+    cells[0].text = 'PMT (Tiền trả/tháng)'
+    cells[1].text = f"{format_vnd(metrics.get('PMT_thang', 0))} VND"
+    cells[2].text = ''
+    
+    # DSR
+    cells = table3.rows[2].cells
+    cells[0].text = 'DSR (Debt Service Ratio)'
+    dsr = metrics.get('DSR', 0)
+    cells[1].text = f"{dsr*100:.1f}%" if not np.isnan(dsr) else 'n/a'
+    cells[2].text = '✓ Đạt' if (not np.isnan(dsr) and dsr <= 0.8) else '✗ Không đạt'
+    
+    # LTV
+    cells = table3.rows[3].cells
+    cells[0].text = 'LTV (Loan to Value)'
+    ltv = metrics.get('LTV', 0)
+    cells[1].text = f"{ltv*100:.1f}%" if not np.isnan(ltv) else 'n/a'
+    cells[2].text = '✓ Đạt' if (not np.isnan(ltv) and ltv <= 0.8) else '✗ Không đạt'
+    
+    # E/C
+    cells = table3.rows[4].cells
+    cells[0].text = 'E/C (Equity to Capital)'
+    ec = metrics.get('E_over_C', 0)
+    cells[1].text = f"{ec*100:.1f}%" if not np.isnan(ec) else 'n/a'
+    cells[2].text = '✓ Đạt' if (not np.isnan(ec) and ec >= 0.2) else '✗ Không đạt'
+    
+    # CFR
+    cells = table3.rows[5].cells
+    cells[0].text = 'CFR (Cash Flow Ratio)'
+    cfr = metrics.get('CFR', 0)
+    cells[1].text = f"{cfr*100:.1f}%" if not np.isnan(cfr) else 'n/a'
+    cells[2].text = '✓ Đạt' if (not np.isnan(cfr) and cfr > 0) else '✗ Không đạt'
+    
+    # Coverage
+    cells = table3.rows[6].cells
+    cells[0].text = 'Coverage (Collateral Coverage)'
+    cov = metrics.get('Coverage', 0)
+    cells[1].text = f"{cov*100:.1f}%" if not np.isnan(cov) else 'n/a'
+    cells[2].text = '✓ Đạt' if (not np.isnan(cov) and cov > 1.2) else '✗ Không đạt'
+    
+    # Score
+    cells = table3.rows[7].cells
+    cells[0].text = 'Score tổng hợp'
+    cells[1].text = f"{metrics.get('Score_AI_demo', 0):.3f}"
+    score = metrics.get('Score_AI_demo', 0)
+    cells[2].text = '✓ Tốt' if score >= 0.7 else ('⚠ Trung bình' if score >= 0.5 else '✗ Yếu')
+    
+    doc.add_paragraph()
+    
+    # PHẦN IV: KẾ HOẠCH TRẢ NỢ (5 kỳ đầu)
+    doc.add_heading('IV. KẾ HOẠCH TRẢ NỢ (5 kỳ đầu)', 1)
+    
+    n_rows = min(6, len(schedule_df) + 1)  # Header + 5 rows data
+    table4 = doc.add_table(rows=n_rows, cols=6)
+    table4.style = 'Light Grid Accent 1'
+    
+    # Header
+    hdr_cells = table4.rows[0].cells
+    hdr_cells[0].text = 'Kỳ'
+    hdr_cells[1].text = 'Ngày'
+    hdr_cells[2].text = 'Tiền lãi'
+    hdr_cells[3].text = 'Tiền gốc'
+    hdr_cells[4].text = 'Tổng trả'
+    hdr_cells[5].text = 'Dư nợ'
+    
+    # Data (5 rows đầu)
+    for i in range(min(5, len(schedule_df))):
+        row = schedule_df.iloc[i]
+        cells = table4.rows[i+1].cells
+        cells[0].text = str(row['Kỳ'])
+        cells[1].text = row['Ngày thanh toán']
+        cells[2].text = format_vnd(row['Tiền lãi'])
+        cells[3].text = format_vnd(row['Tiền gốc'])
+        cells[4].text = format_vnd(row['Tổng phải trả'])
+        cells[5].text = format_vnd(row['Dư nợ còn lại'])
+    
+    doc.add_paragraph()
+    doc.add_paragraph(f"(Xem file Excel đính kèm để có đầy đủ {len(schedule_df)} kỳ thanh toán)")
+    
+    doc.add_paragraph()
+    
+    # PHẦN V: PHÂN TÍCH VÀ KẾT LUẬN
+    if analysis:
+        doc.add_heading('V. PHÂN TÍCH VÀ KẾT LUẬN (AI)', 1)
+        doc.add_paragraph(analysis)
+        doc.add_paragraph()
+    
+    # PHẦN VI: Ý KIẾN THẨM ĐỊNH
+    doc.add_heading('VI. Ý KIẾN THẨM ĐỊNH', 1)
+    
+    # Tự động đưa ra đề xuất dựa trên Score
+    score = metrics.get('Score_AI_demo', 0)
+    dsr = metrics.get('DSR', 0)
+    ltv = metrics.get('LTV', 0)
+    
+    if score >= 0.7 and (np.isnan(dsr) or dsr <= 0.8) and (np.isnan(ltv) or ltv <= 0.8):
+        de_xuat = "☑ ĐỀ XUẤT CHO VAY"
+        ly_do = "Hồ sơ đáp ứng các chỉ tiêu tài chính, khả năng trả nợ tốt, tài sản bảo đảm đầy đủ."
+    elif score >= 0.5:
+        de_xuat = "☑ ĐỀ XUẤT CHO VAY CÓ ĐIỀU KIỆN"
+        ly_do = "Hồ sơ cần bổ sung thêm tài sản bảo đảm hoặc điều chỉnh điều kiện vay để giảm rủi ro."
+    else:
+        de_xuat = "☐ KHÔNG ĐỀ XUẤT CHO VAY"
+        ly_do = "Hồ sơ không đạt các chỉ tiêu tài chính tối thiểu, rủi ro cao."
+    
+    doc.add_paragraph(de_xuat, style='Heading 3')
+    doc.add_paragraph(f"Lý do: {ly_do}")
+    doc.add_paragraph()
+    
+    # Chữ ký
+    doc.add_paragraph()
+    doc.add_paragraph('_' * 50)
+    doc.add_paragraph()
+    
+    table_sign = doc.add_table(rows=3, cols=2)
+    cells = table_sign.rows[0].cells
+    cells[0].text = 'Người thẩm định'
+    cells[1].text = 'Phê duyệt'
+    
+    cells = table_sign.rows[1].cells
+    cells[0].text = '(Ký, ghi rõ họ tên)'
+    cells[1].text = '(Ký, ghi rõ họ tên)'
+    
+    # Save to bytes
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer.read()
+
+
 # ========================== UI ==========================
 st.title("💼 Thẩm định phương án sử dụng vốn (PASDV)")
 st.caption("Upload .docx → Trích xuất → Chỉnh sửa → Tính chỉ tiêu → Kế hoạch trả nợ → Phân tích AI → Xuất Excel/ZIP")
@@ -601,7 +823,20 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
 out.seek(0)
 st.download_button("⬇️ Tải Excel", data=out, file_name="ke_hoach_tra_no.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
+# Thêm nút xuất DOCX
+if Document is not None:
+    docx_buffer = export_to_docx(data, metrics, schedule_df, analysis=analysis if (api_key and genai) else "")
+    st.download_button(
+        "📄 Tải Báo cáo DOCX",
+        data=docx_buffer,
+        file_name=f"bao_cao_tham_dinh_{data.get('ten_khach_hang', 'khach_hang').replace(' ', '_')}_{dt.date.today().strftime('%Y%m%d')}.docx",
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+else:
+    st.info("📄 Cài đặt python-docx để xuất báo cáo DOCX")
+
 st.subheader("4) Phân tích AI (Gemini)")
+analysis = ""
 if api_key and genai is not None:
     with st.spinner("Đang phân tích..."):
         analysis = gemini_analyze(data, metrics, model_name=model_name, api_key=api_key)
