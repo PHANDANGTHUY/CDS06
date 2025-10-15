@@ -800,7 +800,7 @@ with st.sidebar:
     if not api_key:
         api_key = st.secrets.get("GENAI_API_KEY", "") if hasattr(st, "secrets") else ""
     st.markdown("---")
-    st.write("📦 Xuất ZIP mã nguồn để đưa lên GitHub/Streamlit Cloud ở cuối trang.")
+
 uploaded = st.file_uploader("Tải lên hồ sơ phương án pasdv.docx", type=["docx"], help="Chỉ cần một file .docx")
 data = FIELD_DEFAULTS.copy()
 if uploaded is not None:
